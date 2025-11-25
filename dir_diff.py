@@ -6,9 +6,7 @@ import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-################################################################################
 # Multi-Thread detection
-################################################################################
 
 def auto_threads(multiplier=4, minimum=4, maximum=64):
     # Auto-tune thread count based on CPU count.
@@ -19,9 +17,7 @@ def auto_threads(multiplier=4, minimum=4, maximum=64):
     threads = cores * multiplier
     return max(minimum, min(threads, maximum))
 
-################################################################################
 # HASHING
-################################################################################
 
 def hash_file(path, block_size=65536):
     hasher = hashlib.sha256()
@@ -33,13 +29,11 @@ def hash_file(path, block_size=65536):
             hasher.update(chunk)
     return hasher.hexdigest()
 
-################################################################################
 # MANIFEST GENERATION (MULTI-THREADED)
-################################################################################
 
 def _hash_file_task(directory, full_path):
     ## Worker task for hashing a single file
-    rel_path = full_path.relative_to(directory)
+    rel_path = full_path.relative_to(directory).as_posix()
     return str(rel_path), {
         "hash": hash_file(full_path),
         "size": os.path.getsize(full_path)
@@ -72,21 +66,22 @@ def build_manifest(directory, threads=None):
 
     return manifest
 
-################################################################################
 # MANIFEST SAVE / LOAD
-################################################################################
 
 def save_manifest(manifest, manifest_file):
+    # save with POSIX paths
+    manifest_posix = {k.replace("\\", "/"): v for k, v in manifest.items()}
     with open(manifest_file, "w") as f:
-        json.dump(manifest, f, indent=2)
+        json.dump(manifest_posix, f, indent=2)
 
 def load_manifest(manifest_file):
     with open(manifest_file, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    
+    # normalize Windows backslahes to POSIX
+    return {k.replace("\\", "/"): v for k, v in data.items()}
 
-################################################################################
 # COMPARISON LOGIC
-################################################################################
 
 def diff_manifests(man1, man2):
     added = []
@@ -105,9 +100,7 @@ def diff_manifests(man1, man2):
 
     return added, removed, changed
 
-################################################################################
 # COPY FILES (MULTI-THREADED)
-################################################################################
 
 def _copy_file_task(src, dest):
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -126,17 +119,16 @@ def copy_files(file_list, source_dir, output_dir, threads=None):
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = []
         for rel_path in file_list:
-            src = source_dir / rel_path
-            dest = output_dir / rel_path
+            # Convert POSIX to os-native path.... grr Windows
+            src = source_dir / Path(rel_path)
+            dest = output_dir / Path(rel_path)
             futures.append(executor.submit(_copy_file_task, src, dest))
 
         # Optional: progress output
         for fut in as_completed(futures):
             _ = fut.result()
 
-################################################################################
 # MAIN FUNCTIONS
-################################################################################
 
 def generate_manifest(src_dir, save_new_manifest=None):
     print("Building current manifest (multi-threaded)...")
@@ -173,9 +165,7 @@ def extract_differential(src_dir, old_manifest_file, output_dir=None, save_new_m
 
     return added, removed, changed
 
-################################################################################
 # CLI
-################################################################################
 
 if __name__ == "__main__":
     import argparse
