@@ -7,6 +7,19 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 ################################################################################
+# Multi-Thread detection
+################################################################################
+
+def auto_threads(multiplier=4, minimum=4, maximum=64):
+    # Auto-tune thread count based on CPU count.
+    # multiplier: how many threads per CPU core
+    # minimum: minimum thread count
+    # maximum: hard thread cap
+    cores = os.cpu_count() or 4
+    threads = cores * multiplier
+    return max(minimum, min(threads, maximum))
+
+################################################################################
 # HASHING
 ################################################################################
 
@@ -25,14 +38,14 @@ def hash_file(path, block_size=65536):
 ################################################################################
 
 def _hash_file_task(directory, full_path):
-    """Worker task for hashing a single file."""
+    ## Worker task for hashing a single file
     rel_path = full_path.relative_to(directory)
     return str(rel_path), {
         "hash": hash_file(full_path),
         "size": os.path.getsize(full_path)
     }
 
-def build_manifest(directory, threads=8):
+def build_manifest(directory, threads=None):
     directory = Path(directory)
     manifest = {}
 
@@ -41,6 +54,10 @@ def build_manifest(directory, threads=8):
     for root, _, files in os.walk(directory):
         for file in files:
             file_paths.append(Path(root) / file)
+
+    #Auto threading
+    if threads is None:
+        threads = auto_threads()
 
     # Parallel hashing
     with ThreadPoolExecutor(max_workers=threads) as executor:
@@ -97,10 +114,14 @@ def _copy_file_task(src, dest):
     shutil.copy2(src, dest)
     return str(dest)
 
-def copy_files(file_list, source_dir, output_dir, threads=8):
+def copy_files(file_list, source_dir, output_dir, threads=None):
     source_dir = Path(source_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    #Auto thread detection
+    if threads is None:
+        threads = auto_threads()
 
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = []
