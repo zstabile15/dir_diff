@@ -39,7 +39,7 @@ def _hash_file_task(directory, full_path):
         "size": os.path.getsize(full_path)
     }
 
-def build_manifest(directory, threads=None):
+def build_manifest(directory, threads=None, progress_queue=None):
     directory = Path(directory)
     manifest = {}
 
@@ -48,6 +48,10 @@ def build_manifest(directory, threads=None):
     for root, _, files in os.walk(directory):
         for file in files:
             file_paths.append(Path(root) / file)
+
+    #Setup gui progress bar
+    total_files = len(file_paths)
+    completed = 0
 
     #Auto threading
     if threads is None:
@@ -64,6 +68,12 @@ def build_manifest(directory, threads=None):
             rel_path, data = fut.result()
             manifest[rel_path] = data
 
+            #update gui progres bar
+            if progress_queue:
+                completed += 1
+                progress_queue.put((completed, total_files))
+
+
     return manifest
 
 # MANIFEST SAVE / LOAD
@@ -71,6 +81,10 @@ def build_manifest(directory, threads=None):
 def save_manifest(manifest, manifest_file):
     # save with POSIX paths
     manifest_posix = {k.replace("\\", "/"): v for k, v in manifest.items()}
+
+    if not manifest_file.endswith(".json"):
+        manifest_file += ".json"
+
     with open(manifest_file, "w") as f:
         json.dump(manifest_posix, f, indent=2)
 
@@ -107,10 +121,14 @@ def _copy_file_task(src, dest):
     shutil.copy2(src, dest)
     return str(dest)
 
-def copy_files(file_list, source_dir, output_dir, threads=None):
+def copy_files(file_list, source_dir, output_dir, threads=None, progress_queue=None):
     source_dir = Path(source_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    #Setup gui progress bar
+    total = len(file_list)
+    completed = 0
 
     #Auto thread detection
     if threads is None:
@@ -127,23 +145,26 @@ def copy_files(file_list, source_dir, output_dir, threads=None):
         # Optional: progress output
         for fut in as_completed(futures):
             _ = fut.result()
+            if progress_queue:
+                completed += 1
+                progress_queue.put((completed,total))
 
 # MAIN FUNCTIONS
 
-def generate_manifest(src_dir, save_new_manifest=None):
+def generate_manifest(src_dir, save_new_manifest=None, progress_queue=None):
     print("Building current manifest (multi-threaded)...")
-    new_manifest = build_manifest(src_dir)
+    new_manifest = build_manifest(src_dir,progress_queue=progress_queue)
 
     if save_new_manifest:
         save_manifest(new_manifest, save_new_manifest)
         print(f"New manifest saved to: {save_new_manifest}")
 
-def extract_differential(src_dir, old_manifest_file, output_dir=None, save_new_manifest=None):
+def extract_differential(src_dir, old_manifest_file, output_dir=None, save_new_manifest=None, progress_queue=None):
     print("Loading old manifest...")
     old_manifest = load_manifest(old_manifest_file)
 
     print("Building current manifest (multi-threaded)...")
-    new_manifest = build_manifest(src_dir)
+    new_manifest = build_manifest(src_dir, progress_queue=progress_queue)
 
     print("Comparing directories...")
     added, removed, changed = diff_manifests(old_manifest, new_manifest)
@@ -156,7 +177,7 @@ def extract_differential(src_dir, old_manifest_file, output_dir=None, save_new_m
     if output_dir:
         print(f"\nCopying differential files to: {output_dir} (multi-threaded)")
         to_copy = added + changed
-        copy_files(to_copy, src_dir, output_dir)
+        copy_files(to_copy, src_dir, output_dir,progress_queue=progress_queue)
         print("Copy complete.")
 
     if save_new_manifest:
