@@ -6,6 +6,9 @@ import os
 
 import dir_diff  # <-- main moduel with the functions
 
+#Get current directory
+pwd = os.path.dirname(__file__)
+
 #########################################
 # GUI Application
 #########################################
@@ -76,22 +79,22 @@ class DirDiffGUI:
     # File Browsers
     ###########################################################
     def browse_source(self):
-        path = filedialog.askdirectory()
+        path = filedialog.askdirectory(initialdir=pwd)
         if path:
             self.src_var.set(path)
 
     def browse_manifest(self):
-        path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
+        path = filedialog.askopenfilename(initialdir=pwd,filetypes=[("JSON files", "*.json")])
         if path:
             self.manifest_var.set(path)
 
     def browse_output(self):
-        path = filedialog.askdirectory()
+        path = filedialog.askdirectory(initialdir=pwd)
         if path:
             self.output_var.set(path)
 
     def browse_save_manifest(self):
-        path = filedialog.asksaveasfilename(defaultextension=".json")
+        path = filedialog.asksaveasfilename(initialdir=pwd,defaultextension=".json")
         if path:
             self.save_var.set(path)
 
